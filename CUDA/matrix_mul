@@ -1,0 +1,143 @@
+#!nvidia-smi
+%%writefile matrix_mul.cu
+#include<bits/stdc++.h>
+#include<cuda_runtime.h>
+using namespace std;
+
+__global__ void matrixMul(float* A, float* B, float* C, int M, int N, int P, int offset) {
+    int k = threadIdx.x + offset;
+
+    float* a = A + k * M * N;
+    float* b = B + k * N * P;
+    float* c = C + k * M * P;
+
+    for(int i = 0; i < M; i++) {
+        for(int j = 0; j < N; j++) {
+            for(int l = 0; l < P; l++) {
+                //c[i][l] += a[i][j] * b[j][l];
+                c[i * P + l] += a[i * N + j] * b[j * P + l];
+            }
+        }
+    }
+}
+
+
+// print function 
+
+void printOneMatrix(float* A, int k, int M, int N) {
+    cout << "Matrix index = " << k << endl;
+    float* base = A + k * M * N;
+
+    for(int i = 0; i < M; i++) {
+        for(int j = 0; j < N; j++) {
+            cout << base[i * N + j] << " ";
+        }
+        cout << endl;
+    }
+}
+
+
+/*// print the first matrix only
+void printMatrix(float *A, int M, int N) {
+  for(int i = 0; i < M; i++) {
+    for(int j = 0; j < N; j++) {
+      printf("%.0f ", A[i * N + j]);
+    }
+    cout<<endl;
+  }
+}*/
+
+// main function
+int main(int argc, char *argv[]) {
+
+    int T = atoi(argv[1]); //koyta thread use korte parbo
+    int K = atoi(argv[2]); //koita matrix gun
+
+    //100 gun, thread 10,
+
+    int M = 3, N = 3, P = 3;
+
+    int SizeA = M * N * K;
+    int SizeB = N * P * K;
+    int SizeC = M * P * K;
+
+    //memory alocate (cpu allocate)
+    float *h_A = new float[SizeA];
+    float *h_B = new float[SizeB];
+    float *h_C = new float[SizeC];
+
+
+    //malloc (gpu allocate)
+    float *d_A;
+    cudaMalloc(&d_A, SizeA * sizeof(float));
+    float *d_B;
+    cudaMalloc(&d_B, SizeB * sizeof(float));
+    float *d_C;
+    cudaMalloc(&d_C, SizeC * sizeof(float));
+
+    //data initialize
+    for (int i = 0; i < SizeA; i++) {
+        h_A[i] = rand() % 10;
+    }
+    for(int i = 0; i < SizeB; i++) {
+        h_B[i] = rand() % 10;
+    }
+
+
+    //copy from host to device
+    cudaMemcpy(d_A, h_A, SizeA * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_B, h_B, SizeB * sizeof(float), cudaMemcpyHostToDevice);
+
+    //cuda process suru
+    int gunKorteHobe = K;
+    int offset = 0;
+    while(gunKorteHobe > 0){
+
+        int currentBatch = min(gunKorteHobe, T);
+
+        matrixMul<<<1,currentBatch>>>(d_A, d_B, d_C, M, N, P, offset);
+        cudaDeviceSynchronize();
+
+        gunKorteHobe -= currentBatch;
+        offset += currentBatch;
+    }
+
+    // lets copy back to cpu
+    cudaMemcpy(h_C, d_C, SizeC * sizeof(float), cudaMemcpyDeviceToHost);
+
+    cout << "All operation done" << endl;
+
+    // For output print 
+    /*cout<<"Matrix A[0]:"<<endl;
+    printMatrix(h_A, M, N);
+    cout<<"Matrix B[0]:"<<endl;
+    printMatrix(h_B, N, P);
+    cout<<"Matrix C[0]:"<<endl;
+    printMatrix(h_C, M, P);*/
+    int howManyToPrint = 3;
+
+    for(int k = 2; k < howManyToPrint; k++) {
+      cout << "\n=== MATRIX SET " << k << " ===\n";
+
+      cout << "A[" << k << "]\n";
+      printOneMatrix(h_A, k, M, N);
+
+      cout << "B[" << k << "]\n";
+      printOneMatrix(h_B, k, N, P);
+
+      cout << "C[" << k << "]\n";
+      printOneMatrix(h_C, k, M, P);
+    }
+
+    cudaFree(d_A);
+    cudaFree(d_B);
+    cudaFree(d_C);
+    free(h_A);
+    free(h_B);
+    free(h_C);
+    return 0;
+
+}
+//!nvcc -arch=sm_75 matrix_mul.cu -o mm
+//!./mm 5 102 > output.txt
+//!time ./mm 5 102 && sleep 102
